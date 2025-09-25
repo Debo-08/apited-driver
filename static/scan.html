@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ApiTed Driver — Escáner QR</title>
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;padding:16px}
+    video{width:100%;max-width:520px;border:1px solid #ddd;border-radius:12px}
+    .card{max-width:520px;border:1px solid #eee;border-radius:12px;padding:12px;margin-top:12px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+    input,button,textarea{padding:10px;border:1px solid #ddd;border-radius:8px;flex:1}
+    button{cursor:pointer}
+    .small{font-size:12px;color:#666}
+    .ok{color:#0a0}
+    .warn{color:#a60}
+  </style>
+</head>
+<body>
+  <h1>📦 ApiTed — Escáner de QR</h1>
+  <p class="small">Tip: en Android, Chrome pide permiso de cámara. En PC, funciona en <b>localhost</b> o HTTPS.</p>
+
+  <video id="preview" playsinline></video>
+
+  <div class="card">
+    <div class="row">
+      <button id="start">Iniciar cámara</button>
+      <button id="stop">Detener</button>
+      <button id="flip">Cambiar cámara</button>
+    </div>
+    <div class="row">
+      <input id="last" placeholder="Último QR decodificado" readonly>
+    </div>
+    <div class="row">
+      <input id="shipment" placeholder="shipment_id detectado (si aplica)" readonly>
+    </div>
+    <div class="row">
+      <textarea id="notes" placeholder="Notas (ej. timbre roto, perro, piso 3)"></textarea>
+    </div>
+    <div class="row">
+      <button id="save">Guardar a lista</button>
+      <button id="export">Exportar CSV</button>
+      <span id="status" class="small"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>🗂 Lista de envíos del día</h3>
+    <table id="tbl" border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%">
+      <thead><tr><th>#</th><th>shipment_id</th><th>QR (raw)</th><th>Notas</th><th>Hora</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- Librería de QR (via CDN) -->
+  <script type="module">
+    import QrScanner from "https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner.min.js";
+    const video = document.getElementById('preview');
+    const btnStart = document.getElementById('start');
+    const btnStop = document.getElementById('stop');
+    const btnFlip = document.getElementById('flip');
+    const btnSave = document.getElementById('save');
+    const btnExport = document.getElementById('export');
+    const last = document.getElementById('last');
+    const shipment = document.getElementById('shipment');
+    const notes = document.getElementById('notes');
+    const status = document.getElementById('status');
+    const tbody = document.querySelector('#tbl tbody');
+
+    let scanner;
+    let currentDeviceId = null;
+    let rows = [];
+
+    function parseShipmentId(text) {
+      // 🧪 Acá probamos algunos patrones comunes.
+      // Si el QR trae una URL con "shipments" o "shipment_id=", extraemos.
+      const byParam = /(?:shipment_id=|shipping_id=)(\d+)/i.exec(text);
+      if (byParam) return byParam[1];
+      const byWord = /shipments?\/(\d+)/i.exec(text);
+      if (byWord) return byWord[1];
+      const onlyDigits = text.match(/\b\d{8,15}\b/); // número largo en el texto
+      if (onlyDigits) return onlyDigits[0];
+      return "";
+    }
+
+    async function listCameras() {
+      const devices = await QrScanner.listCameras(true);
+      return devices;
+    }
+
+    async function start(deviceId = null) {
+      if (scanner) await scanner.stop();
+      scanner = new QrScanner(video, result => {
+        last.value = result.data.trim();
+        shipment.value = parseShipmentId(result.data.trim());
+        status.textContent = 'QR leído';
+        status.className = 'small ok';
+      }, { preferredCamera: deviceId ? { deviceId } : 'environment' });
+      await scanner.start();
+    }
+
+    btnStart.onclick = async () => {
+      status.textContent = 'Abriendo cámara...';
+      status.className = 'small';
+      await start(currentDeviceId);
+      status.textContent = 'Cámara lista';
+      status.className = 'small ok';
+    };
+
+    btnStop.onclick = async () => {
+      if (scanner) await scanner.stop();
+      status.textContent = 'Cámara detenida';
+      status.className = 'small warn';
+    };
+
+    btnFlip.onclick = async () => {
+      const cams = await listCameras();
+      if (!cams.length) return;
+      const idx = cams.findIndex(c => c.deviceId === currentDeviceId);
+      const next = cams[(idx + 1) % cams.length];
+      currentDeviceId = next.deviceId;
+      await start(currentDeviceId);
+      status.textContent = 'Cámara cambiada';
+    };
+
+    btnSave.onclick = () => {
+      if (!last.value) {
+        status.textContent = 'Escaneá un QR primero';
+        status.className = 'small warn';
+        return;
+      }
+      const row = {
+        shipment_id: shipment.value || '',
+        raw_qr: last.value,
+        notes: notes.value || '',
+        ts: new Date().toISOString()
+      };
+      rows.push(row);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${rows.length}</td>
+                      <td>${row.shipment_id}</td>
+                      <td>${row.raw_qr}</td>
+                      <td>${row.notes}</td>
+                      <td>${new Date(row.ts).toLocaleTimeString()}</td>`;
+      tbody.prepend(tr);
+      notes.value = '';
+      status.textContent = 'Guardado en la lista';
+      status.className = 'small ok';
+    };
+
+    btnExport.onclick = () => {
+      if (!rows.length) return;
+      const header = ['shipment_id','raw_qr','notes','ts'];
+      const csv = [header.join(',')]
+        .concat(rows.map(r => header.map(h => `${String(r[h]||'').replace(/"/g,'""')}"`).join(',')))
+        .join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+      a.download = `apited_envios_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    };
+  </script>
+</body>
+</html>
