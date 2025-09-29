@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0ea5e9">
+  <link rel="manifest" href="/static/manifest.webmanifest">  
   <title>ApiTed Driver — Escáner QR</title>
   <style>
     body{font-family:system-ui,Arial,sans-serif;padding:16px}
@@ -159,6 +161,12 @@
       a.download = `apited_envios_${new Date().toISOString().slice(0,10)}.csv`;
       a.click();
     };
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+      .register("/sw.js")
+      .then(() => console.log(" Service Worker registrado"))
+      .catch((err) => console.error( "ERROR en SW:", err));
+    }
   </script>
 </body>
 </html>
