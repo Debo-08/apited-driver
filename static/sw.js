@@ -1,5 +1,5 @@
 // Service Worker de ApiTed Driver
-const CACHE = "apited-v2";
+const CACHE = "apited-v4";
 const ASSETS = [
   "/scan",
   "/static/scan.html",

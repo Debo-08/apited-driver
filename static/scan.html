@@ -26,9 +26,9 @@
 
   <div class="card">
     <div class="row">
-      <button id="start">Iniciar cámara</button>
-      <button id="stop">Detener</button>
-      <button id="flip">Cambiar cámara</button>
+      <button id="start" type="button">Iniciar cámara</button>
+      <button id="stop" type="button">Detener</button>
+      <button id="flip" type="button">Cambiar cámara</button>
     </div>
     <div class="row">
       <input id="last" placeholder="Último QR decodificado" readonly>
@@ -44,15 +44,15 @@
     </div>
     <div class="row">
       <input id="labelPhoto" type="file" accept="image/*" capture="environment">
-      <button id="ocrLabel">Leer etiqueta (OCR)</button>
+      <button id="ocrLabel" type="button">Leer etiqueta (OCR)</button>
     </div>
   
     <div class="row">
       <textarea id="notes" placeholder="Notas (ej. timbre roto, perro, piso 3)"></textarea>
     </div>
     <div class="row">
-      <button id="save">Guardar a lista</button>
-      <button id="export">Exportar CSV</button>
+      <button id="save" type="button">Guardar a lista</button>
+      <button id="export" type="button">Exportar CSV</button>
       <span id="status" class="small"></span>
     </div>
   </div>
@@ -80,6 +80,30 @@
 
   <!-- Librería de QR (via CDN) -->
   <script type="module">
+          
+    // === Diagnóstico rápido ===
+    const ids = ["btnStart","btnStop","btnSwitch","btnSave","btnExport","ocrLabel"];
+    function byId(id){ const el = document.getElementById(id); if(!el) console.error("No existe #"+id); return el; }
+    try {
+      console.log("✅ JS cargado. Version diag 1");
+      ids.forEach(id => {
+         const b = byId(id);
+         if (b) {
+           b.addEventListener("click", () => {
+             console.log("click ->", id);
+             b.textContent = "✔ " + b.textContent; // marca visual al clic
+             setTimeout(() => (b.textContent = b.textContent.replace(/^✔\s*/,"")), 600);
+           }, { once: false });
+         }
+       });
+     } catch (e) {
+       alert("❌ Error inicial de JS: " + (e?.message||e));
+       console.error(e);
+     }
+      // === /Diagnóstico ===
+
+
+
     import Tesseract from "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
     import QrScanner from "https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner.min.js";
     const video = document.getElementById('preview');
