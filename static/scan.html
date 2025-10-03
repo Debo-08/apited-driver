@@ -37,6 +37,17 @@
       <input id="shipment" placeholder="shipment_id detectado (si aplica)" readonly>
     </div>
     <div class="row">
+      <input id="recipient" placeholder="Destinatario (auto por OCR)" />
+    </div>
+    <div class="row">
+      <input id="address" placeholder="Dirección (auto por OCR)" />
+    </div>
+    <div class="row">
+      <input id="labelPhoto" type="file" accept="image/*" capture="environment">
+      <button id="ocrLabel">Leer etiqueta (OCR)</button>
+    </div>
+  
+    <div class="row">
       <textarea id="notes" placeholder="Notas (ej. timbre roto, perro, piso 3)"></textarea>
     </div>
     <div class="row">
@@ -49,13 +60,27 @@
   <div class="card">
     <h3>🗂 Lista de envíos del día</h3>
     <table id="tbl" border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%">
-      <thead><tr><th>#</th><th>shipment_id</th><th>QR (raw)</th><th>Notas</th><th>Hora</th></tr></thead>
-      <tbody></tbody>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>ID</th>
+          <th>shipment_id</th>
+          <th>Destinatario</th>
+          <th>Dirección</th>
+          <th>QR crudo</th>
+          <th>QR (raw)</th>
+          <th>Notas</th>
+          <th>Hora</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+      </tbody>
     </table>
   </div>
 
   <!-- Librería de QR (via CDN) -->
   <script type="module">
+    import Tesseract from "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
     import QrScanner from "https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner.min.js";
     const video = document.getElementById('preview');
     const btnStart = document.getElementById('start');
@@ -69,6 +94,35 @@
     const status = document.getElementById('status');
     const tbody = document.querySelector('#tbl tbody');
 
+    // Còdigo OCR
+    const recipient = document.getElementById('recipient');
+    const address = document.getElementById('address');
+    const labelPhoto = document.getElementById('labelPhoto');
+    const ocrBtn = document.getElementById('ocrLabel');
+
+  // Heurísticas básicas para español (ajustables)
+  function parseRecipient(text) {
+    // Busca líneas con "Destinatario", o la 1ª línea en mayúsculas con 2+ palabras
+    const byWord = /destinatario[:\s]*([^\n]+)/i.exec(text);
+    if (byWord) return byWord[1].trim();
+    const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+    const cand = lines.find(l => /[A-ZÁÉÍÓÚÑ]{3,}\s+[A-ZÁÉÍÓÚÑ]{3,}/.test(l));
+    return cand || "";
+  }
+  function parseAddress(text) {
+    // Calle + número + opcional piso/depto — muy ajustable a tus etiquetas
+    const byCalleNum = /([A-ZÁÉÍÓÚÑa-záéíóúñ\s\.]{3,})\s+(\d{1,6})(.*)?/m.exec(text);
+    if (byCalleNum) {
+      const calle = byCalleNum[1].replace(/\s{2,}/g,' ').trim();
+      const num = byCalleNum[2].trim();
+      const resto = (byCalleNum[3]||"").trim();
+      // recortá resto a algo razonable (piso, dto, localidad)
+      const extra = resto.split(/[,;]/)[0].slice(0,40).trim();
+      return `${calle} ${num}${extra ? ' ' + extra : ''}`.trim();
+    }
+    return"";
+  }
+// ---------- cierre Codigo ocr---------
     let scanner;
     let currentDeviceId = null;
     let rows = [];
@@ -100,7 +154,7 @@
       }, { preferredCamera: deviceId ? { deviceId } : 'environment' });
       await scanner.start();
     }
-
+      //botones
     btnStart.onclick = async () => {
       status.textContent = 'Abriendo cámara...';
       status.className = 'small';
@@ -108,7 +162,23 @@
       status.textContent = 'Cámara lista';
       status.className = 'small ok';
     };
-
+    ocrBtn.onclick = async () => {
+      const f = labelPhoto.files?.[0];
+      if (!f) { msgStatus('Elegí una foto de la etiqueta', 'small warn'); return; }
+      msgStatus('Leyendo etiqueta (OCR)…');
+        try {
+      const res = await Tesseract.recognize(f, 'spa+eng', { logger: () => {} });
+      const text = (res?.data?.text || '').replace(/\r/g,'').trim();
+      const r = parseRecipient(text);
+      const a = parseAddress(text);
+      if (r) recipient.value = r;
+      if (a) address.value = a;
+      if (!r && !a) msgStatus('No pude detectar nombre/dirección. Probá otra foto o acercá más.', 'small warn');
+      else msgStatus('Etiqueta leída por OCR', 'small ok');
+      } catch (e) {
+      msgStatus('Error de OCR. Probá con otra foto (más foco y luz).', 'small warn');
+      }
+    };
     btnStop.onclick = async () => {
       if (scanner) await scanner.stop();
       status.textContent = 'Cámara detenida';
@@ -134,6 +204,8 @@
       const row = {
         shipment_id: shipment.value || '',
         raw_qr: last.value,
+        recipient: recipient.value || '',
+        address: address.value || '',
         notes: notes.value || '',
         ts: new Date().toISOString()
       };
@@ -142,6 +214,8 @@
       tr.innerHTML = `<td>${rows.length}</td>
                       <td>${row.shipment_id}</td>
                       <td>${row.raw_qr}</td>
+                      <td>${row.recipient}</td>
+                      <td>${row.address}</td>
                       <td>${row.notes}</td>
                       <td>${new Date(row.ts).toLocaleTimeString()}</td>`;
       tbody.prepend(tr);
@@ -152,7 +226,7 @@
 
     btnExport.onclick = () => {
       if (!rows.length) return;
-      const header = ['shipment_id','raw_qr','notes','ts'];
+      const header = ['shipment_id','recipient','raw_qr','address','notes','ts'];
       const csv = [header.join(',')]
         .concat(rows.map(r => header.map(h => `${String(r[h]||'').replace(/"/g,'""')}"`).join(',')))
         .join('\n');
